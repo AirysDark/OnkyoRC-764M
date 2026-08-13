@@ -8,11 +8,18 @@
 //
 // Mode: LISTEN ONLY
 // No GPIO driving.
+//
+// Features:
+// - Edge detection
+// - Timing capture
+// - Event counters
+// - Capture buffer
+// - Serial command interface
 
 #include <Arduino.h>
 
 #define JP14_COUNT 4
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 256
 
 const uint8_t JP14_PINS[JP14_COUNT] = {4,5,6,7};
 const char* JP14_NAMES[JP14_COUNT] = {
@@ -34,15 +41,31 @@ struct Capture {
 
 Capture buffer[BUFFER_SIZE];
 uint16_t bufferIndex = 0;
+bool captureEnabled = true;
 
 unsigned long lastReport = 0;
 
 void recordEvent(uint8_t pin, uint8_t state) {
+  if (!captureEnabled) return;
   buffer[bufferIndex].pin = pin;
   buffer[bufferIndex].state = state;
   buffer[bufferIndex].time = micros();
   bufferIndex++;
   if (bufferIndex >= BUFFER_SIZE) bufferIndex = 0;
+}
+
+void dumpCapture() {
+  Serial.println("--- Capture Buffer ---");
+  for (int i = 0; i < BUFFER_SIZE; i++) {
+    if (buffer[i].time != 0) {
+      Serial.print("PIN ");
+      Serial.print(buffer[i].pin + 3);
+      Serial.print(" ");
+      Serial.print(buffer[i].state ? "HIGH" : "LOW");
+      Serial.print(" @ ");
+      Serial.println(buffer[i].time);
+    }
+  }
 }
 
 void setup() {
@@ -51,7 +74,7 @@ void setup() {
 
   Serial.println("Onkyo RC-764M JP1.4 ESP32-S3 Analyzer");
   Serial.println("Passive capture mode");
-  Serial.println("Monitoring JP1.4 pins 3-6 only");
+  Serial.println("Commands: d=dump, c=clear capture");
 
   for (int i=0;i<JP14_COUNT;i++) {
     pinMode(JP14_PINS[i], INPUT);
@@ -62,6 +85,16 @@ void setup() {
 }
 
 void loop() {
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    if (cmd == 'd') dumpCapture();
+    if (cmd == 'c') {
+      memset(buffer, 0, sizeof(buffer));
+      bufferIndex = 0;
+      Serial.println("Capture cleared");
+    }
+  }
+
   for (int i=0;i<JP14_COUNT;i++) {
     int state = digitalRead(JP14_PINS[i]);
 
